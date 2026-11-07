@@ -282,7 +282,6 @@ private struct DoneButton: ToolbarContent {
 }
 
 
-#if !os(visionOS)
 // UIKit's original import-mode picker is separate from SwiftUI.fileImporter.
 // Import mode gives us an app-local copy, rather than relying on an external
 // provider's security-scoped URL after the picker has closed.
@@ -315,8 +314,6 @@ private struct LegacyP12Picker: UIViewControllerRepresentable {
         }
     }
 }
-#endif
-
 struct SettingsView: View {
     @ObservedObject var settings: Settings
     @State private var importingIdentity = false
