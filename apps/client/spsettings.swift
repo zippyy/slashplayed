@@ -16,6 +16,7 @@
 // for a game the companion installed), Open in Files, and Reset Game Settings (after its alert). About: the app's version and
 // Acknowledgements, the licenses of what the app ships.
 import SwiftUI
+import UniformTypeIdentifiers
 import UIKit
 
 private func say(_ s: String) { sp_launch_say("start: " + s) }
