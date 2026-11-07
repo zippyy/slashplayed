@@ -34,6 +34,10 @@ BOOL sp_sign_with_identity(NSString *source, NSString *dest, NSString *_Nullable
 // pushed. Every launcher start.
 NSString *_Nullable sp_identity_import(void);
 
+// Imports a user-picked P12 directly into this device's Keychain after verifying its
+// certificate is listed by an installed provisioning profile. No secrets are logged.
+BOOL sp_identity_import_selected(NSData *p12, NSString *password, NSString *_Nullable *_Nullable problem);
+
 // The companion's Library/spidentity.forget (Update Games on This Device turned off): deletes the identity
 // from the keychain, and anything pushed and not yet imported, and the marker. A line for the log, or nil when
 // it didn't ask. Every launcher start, before sp_identity_import.
