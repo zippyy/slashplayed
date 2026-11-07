@@ -281,13 +281,80 @@ private struct DoneButton: ToolbarContent {
     }
 }
 
+
+#if !os(visionOS)
+// UIKit's original import-mode picker is separate from SwiftUI.fileImporter.
+// Import mode gives us an app-local copy, rather than relying on an external
+// provider's security-scoped URL after the picker has closed.
+private struct LegacyP12Picker: UIViewControllerRepresentable {
+    let onPick: (URL?) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        // Explicit PKCS12 UTI plus public.item for providers that don't correctly
+        // advertise certificates; file extension is checked after selection.
+        let picker = UIDocumentPickerViewController(
+            documentTypes: ["com.rsa.pkcs-12", "public.item"], in: .import)
+        picker.allowsMultipleSelection = false
+        picker.shouldShowFileExtensions = true
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ controller: UIDocumentPickerViewController, context: Context) {}
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let onPick: (URL?) -> Void
+        init(onPick: @escaping (URL?) -> Void) { self.onPick = onPick }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            onPick(urls.first)
+        }
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            onPick(nil)
+        }
+    }
+}
+#endif
+
 struct SettingsView: View {
     @ObservedObject var settings: Settings
     @State private var importingIdentity = false
+    @State private var showDocumentsCertificates = false
     @State private var selectedP12: Data?
     @State private var p12Password = ""
     @State private var importError: String?
     @State private var askP12Password = false
+
+    // Files → On My iPhone → Slashplayed is available through UIFileSharingEnabled.
+    private var localP12Files: [URL] {
+        let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        return ((try? FileManager.default.contentsOfDirectory(at: documents,
+            includingPropertiesForKeys: nil)) ?? [])
+            .filter { ["p12", "pfx"].contains($0.pathExtension.lowercased()) }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    private func receiveP12(_ url: URL) {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        do {
+            guard ["p12", "pfx"].contains(url.pathExtension.lowercased()) else {
+                importError = "Choose a .p12 or .pfx certificate file."
+                return
+            }
+            let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+            guard let size = attrs[.size] as? NSNumber, size.intValue > 0, size.intValue <= 1_048_576 else {
+                importError = "The certificate file must be smaller than 1 MB."
+                return
+            }
+            selectedP12 = try Data(contentsOf: url)
+            p12Password = ""
+            askP12Password = true
+        } catch {
+            importError = "Could not read that certificate file."
+        }
+    }
 
     var body: some View {
         NavigationStack(path: $settings.path) {
@@ -315,28 +382,34 @@ struct SettingsView: View {
                 }
             }
         }
-        .fileImporter(isPresented: $importingIdentity, allowedContentTypes: [.pkcs12]) { result in
-            switch result {
-            case .failure:
-                importError = "Could not select the certificate file."
-            case .success(let url):
-                let scoped = url.startAccessingSecurityScopedResource()
-                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                do {
-                    guard ["p12", "pfx"].contains(url.pathExtension.lowercased()) else {
-                        importError = "Choose a .p12 or .pfx certificate file."
-                        return
+
+        .sheet(isPresented: $importingIdentity) {
+            LegacyP12Picker { url in
+                importingIdentity = false
+                if let url {
+                    // Dismiss UIKit's picker before presenting the password alert.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { receiveP12(url) }
+                }
+            }
+        }
+        .sheet(isPresented: $showDocumentsCertificates) {
+            NavigationStack {
+                List {
+                    ForEach(localP12Files, id: \.path) { url in
+                        Button(url.lastPathComponent) {
+                            showDocumentsCertificates = false
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { receiveP12(url) }
+                        }
                     }
-                    let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
-                    guard let size = attrs[.size] as? NSNumber, size.intValue > 0, size.intValue <= 1_048_576 else {
-                        importError = "The certificate file must be smaller than 1 MB."
-                        return
+                    if localP12Files.isEmpty {
+                        Text("Copy the .p12 file using Files → On My iPhone → Slashplayed. Then reopen this list.")
                     }
-                    selectedP12 = try Data(contentsOf: url)
-                    p12Password = ""
-                    askP12Password = true
-                } catch {
-                    importError = "Could not read the certificate file."
+                }
+                .navigationTitle("Slashplayed Files")
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { showDocumentsCertificates = false }
+                    }
                 }
             }
         }
@@ -442,7 +515,8 @@ struct SettingsView: View {
                 LabeledContent("Signing Identity", value: "Unknown").id("game-updates")
             }
             #if !os(visionOS)
-            Button("Import P12 Signing Identity…") { importingIdentity = true }
+            Button("Choose P12 (UIKit Picker)…") { importingIdentity = true }
+            Button("Import P12 from Slashplayed Files…") { showDocumentsCertificates = true }
             #endif
             if state != .none && state != .forgotten {
                 Button("Forget Signing Identity", role: .destructive) { settings.confirmation = .forgetIdentity }
