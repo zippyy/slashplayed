@@ -178,6 +178,46 @@ NSString *sp_jit_attach(void (^pump)(double)) {
         say(@"a debugger is already attached; it services the prepare");
         return nil;
     }
+    // StikDebug's URL integration targets this running PID and uses the universal.js
+    // breakpoint script. This path intentionally needs no Companion RemotePairing
+    // record or developer disk image in this app: StikDebug manages its own.
+    // Do not consider an opened URL to mean JIT succeeded.
+#if !TARGET_OS_VISION
+    if ([NSUserDefaults.standardUserDefaults boolForKey:@"sp_use_stikdebug"]) {
+        NSString *bundle = NSBundle.mainBundle.bundleIdentifier;
+        if (!bundle.length) return @"Slashplayed has no bundle ID for StikDebug.";
+        NSURLComponents *components = [NSURLComponents new];
+        components.scheme = @"stikdebug";
+        components.host = @"enable-jit";
+        components.queryItems = @[
+            [NSURLQueryItem queryItemWithName:@"bundle-id" value:bundle],
+            [NSURLQueryItem queryItemWithName:@"pid" value:[NSString stringWithFormat:@"%d", getpid()]],
+            [NSURLQueryItem queryItemWithName:@"script-name" value:@"universal.js"]
+        ];
+        NSURL *url = components.URL;
+        if (!url || ![UIApplication.sharedApplication canOpenURL:url])
+            return @"StikDebug isn't installed or can't be opened. Install StikDebug, import its pairing file, enable LocalDevVPN, and try again.";
+        __block BOOL opened = NO, answered = NO;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [UIApplication.sharedApplication openURL:url options:@{} completionHandler:^(BOOL success) {
+                opened = success;
+                answered = YES;
+            }];
+        });
+        double deadline = now() + 20;
+        while (!answered && now() < deadline) pump(0.02);
+        if (!opened) return @"iOS didn't open StikDebug for the JIT request.";
+        say(@"StikDebug requested for running launcher; waiting for debugger attachment");
+        // Opening StikDebug itself does not prove it attached. The game must not
+        // dlopen before P_TRACED is true or the TXM brk will abort the process.
+        deadline = now() + 120;
+        while (!sp_traced() && now() < deadline) pump(0.02);
+        if (!sp_traced())
+            return @"StikDebug didn't attach to Slashplayed within two minutes. In StikDebug, enable JIT for Slashplayed with universal.js; confirm get-task-allow and LocalDevVPN are enabled.";
+        say(@"StikDebug debugger attached; game can run the TXM prepare protocol");
+        return nil;
+    }
+#endif
     NSString *library = [NSHomeDirectory() stringByAppendingPathComponent:@"Library"];
     NSString *record = [library stringByAppendingPathComponent:@"sppairing.plist"];
     NSData *pairing = [NSData dataWithContentsOfFile:record];
