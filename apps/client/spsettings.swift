@@ -282,6 +282,11 @@ private struct DoneButton: ToolbarContent {
 
 struct SettingsView: View {
     @ObservedObject var settings: Settings
+    @State private var importingIdentity = false
+    @State private var selectedP12: Data?
+    @State private var p12Password = ""
+    @State private var importError: String?
+    @State private var askP12Password = false
 
     var body: some View {
         NavigationStack(path: $settings.path) {
@@ -308,6 +313,58 @@ struct SettingsView: View {
                 case .license(let l): LicenseView(license: l).navigationTitle(l.name).toolbar { DoneButton(settings: settings) }
                 }
             }
+        }
+        .fileImporter(isPresented: $importingIdentity, allowedContentTypes: [.data]) { result in
+            switch result {
+            case .failure:
+                importError = "Could not select the certificate file."
+            case .success(let url):
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                do {
+                    guard ["p12", "pfx"].contains(url.pathExtension.lowercased()) else {
+                        importError = "Choose a .p12 or .pfx certificate file."
+                        return
+                    }
+                    let attrs = try FileManager.default.attributesOfItem(atPath: url.path)
+                    guard let size = attrs[.size] as? NSNumber, size.intValue > 0, size.intValue <= 1_048_576 else {
+                        importError = "The certificate file must be smaller than 1 MB."
+                        return
+                    }
+                    selectedP12 = try Data(contentsOf: url)
+                    p12Password = ""
+                    askP12Password = true
+                } catch {
+                    importError = "Could not read the certificate file."
+                }
+            }
+        }
+        .alert("Import P12", isPresented: $askP12Password) {
+            SecureField("P12 password", text: $p12Password)
+            Button("Cancel", role: .cancel) {
+                selectedP12 = nil
+                p12Password = ""
+            }
+            Button("Import") {
+                if let p12 = selectedP12 {
+                    var problem: NSString?
+                    let ok = sp_identity_import_selected(p12 as NSData, p12Password, &problem)
+                    selectedP12 = nil
+                    p12Password = ""
+                    settings.reload()
+                    if !ok { importError = (problem as String?) ?? "Unable to import P12." }
+                }
+            }
+        } message: {
+            Text("Stored only in this iPhone's Keychain. A valid installed provisioning profile must contain this certificate.")
+        }
+        .alert("Signing Identity Error", isPresented: Binding(
+            get: { importError != nil },
+            set: { if !$0 { importError = nil } }
+        )) {
+            Button("OK") { importError = nil }
+        } message: {
+            Text(importError ?? "")
         }
         .alert(title, isPresented: Binding(get: { settings.confirmation != nil }, set: { if !$0 { settings.confirmation = nil } }),
                presenting: settings.confirmation) { c in
@@ -383,6 +440,9 @@ struct SettingsView: View {
             @unknown default:
                 LabeledContent("Signing Identity", value: "Unknown").id("game-updates")
             }
+            #if !os(visionOS)
+            Button("Import P12 Signing Identity…") { importingIdentity = true }
+            #endif
             if state != .none && state != .forgotten {
                 Button("Forget Signing Identity", role: .destructive) { settings.confirmation = .forgetIdentity }
             }
