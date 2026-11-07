@@ -1,0 +1,63 @@
+name: Build Unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/unsigned-ipa.yml"
+      - "scripts/package-unsigned-ipa.py"
+
+permissions:
+  contents: read
+
+env:
+  XCODE_APP: /Applications/Xcode_27.1.app
+  XCODEGEN_VERSION: 2.46.0
+  XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+  RUSTUP_VERSION: 1.29.2
+  RUSTUP_SHA256: f7c7e11eb2e07f006e532a8aaac77b32f4527d305ac386c0c633ca6133d35ca9
+  IDEVICE_CACHE_PATHS: |
+    work/idevice/BUILD.txt
+    work/idevice/include
+    work/idevice/ios
+    work/idevice/xros
+    work/idevice/macos
+  ZSIGN_CACHE_PATHS: |
+    work/zsign/BUILD.txt
+    work/zsign/licenses
+    work/zsign/src/zsign/src
+    work/zsign/ios
+    work/zsign/xros
+    work/zsign/macos
+
+jobs:
+  unsigned-ipa:
+    name: Build and package iOS IPA
+    runs-on: xcode-27
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/companion-deps
+      - name: Fetch the licensed start screen font
+        run: scripts/fetch-font.sh
+      - name: Build the iOS launcher, JIT helper and shims
+        run: apps/companion/build.sh
+      - name: Package unsigned iPhone and iPad IPA
+        run: python3 scripts/package-unsigned-ipa.py
+      - name: Check IPA contents
+        run: |
+          set -euo pipefail
+          unzip -t dist/Slashplayed-unsigned.ipa | tail -n 1
+          unzip -Z1 dist/Slashplayed-unsigned.ipa | grep -qx 'Payload/Slashplayed.app/Info.plist'
+          unzip -Z1 dist/Slashplayed-unsigned.ipa | grep -qx 'Payload/Slashplayed.app/PlugIns/SPJitHelper.appex/Info.plist'
+          unzip -Z1 dist/Slashplayed-unsigned.ipa | grep -q '^Payload/Slashplayed.app/Frameworks/.*\.dylib$'
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Slashplayed-unsigned-IPA
+          path: dist/Slashplayed-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
