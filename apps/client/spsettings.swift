@@ -322,6 +322,7 @@ struct SettingsView: View {
     @State private var p12Password = ""
     @State private var importError: String?
     @State private var askP12Password = false
+    @AppStorage("sp_use_stikdebug") private var useStikDebug = false
 
     // Files → On My iPhone → Slashplayed is available through UIFileSharingEnabled.
     private var localP12Files: [URL] {
@@ -512,6 +513,7 @@ struct SettingsView: View {
                 LabeledContent("Signing Identity", value: "Unknown").id("game-updates")
             }
             #if !os(visionOS)
+            Toggle("Use StikDebug to Launch Games", isOn: $useStikDebug)
             Button("Choose P12 (UIKit Picker)…") { importingIdentity = true }
             Button("Import P12 from Slashplayed Files…") { showDocumentsCertificates = true }
             #endif
