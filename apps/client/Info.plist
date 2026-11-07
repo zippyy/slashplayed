@@ -22,6 +22,7 @@
 	<key>NSBonjourServices</key><array><string>_remotepairing-manual-pairing._tcp</string></array>
 	<key>NSLocalNetworkUsageDescription</key><string>Slashplayed finds Remote Devices in Settings to pair with this Vision Pro, so it can prepare the game without a Mac.</string>
 	<!-- LocalDevVPN's localdevvpn://enable?scheme=slashplayed turns it on and opens this, back to the app (spvpn.m). -->
+	<key>LSApplicationQueriesSchemes</key><array><string>stikdebug</string></array>
 	<key>CFBundleURLTypes</key><array><dict>
 		<key>CFBundleURLName</key><string>slashplayed</string>
 		<key>CFBundleURLSchemes</key><array><string>slashplayed</string></array>
