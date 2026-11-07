@@ -7,6 +7,7 @@ on:
     paths:
       - ".github/workflows/unsigned-ipa.yml"
       - "scripts/package-unsigned-ipa.py"
+      - "apps/client/**"
 
 permissions:
   contents: read
