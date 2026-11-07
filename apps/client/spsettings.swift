@@ -349,7 +349,7 @@ struct SettingsView: View {
             Button("Import") {
                 if let p12 = selectedP12 {
                     var problem: NSString?
-                    let ok = sp_identity_import_selected(p12 as NSData, p12Password, &problem)
+                    let ok = sp_identity_import_selected(p12, p12Password, &problem)
                     selectedP12 = nil
                     p12Password = ""
                     settings.reload()
