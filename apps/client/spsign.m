@@ -189,6 +189,46 @@ NSString *sp_identity_import(void) {
     return line;
 }
 
+// Imports the selected P12 without writing it or its password to disk. A signing
+// identity only works when a currently installed profile lists its certificate.
+BOOL sp_identity_import_selected(NSData *p12, NSString *password, NSString **problem) {
+    if (!p12.length || p12.length > 1024 * 1024 || !password.length) {
+        if (problem) *problem = @"Select a P12 (under 1 MB) and enter its password.";
+        return NO;
+    }
+    NSUInteger count = 0;
+    NSDate *until = nil;
+    NSData *der = nil;
+    OSStatus st = open_p12(p12, password, &count, &until, &der);
+    if (st != errSecSuccess || count != 1 || !der) {
+        if (problem) *problem = @"The P12 password is incorrect or the file does not contain exactly one signing identity.";
+        return NO;
+    }
+    if (!until || until.timeIntervalSinceNow <= 0) {
+        if (problem) *problem = @"The certificate is expired.";
+        return NO;
+    }
+    if (!sp_certificates_listed(@[der], sp_listed_certificates())) {
+        if (problem) *problem = @"This certificate is not listed by an unexpired installed provisioning profile. Re-sign the IPA and helper with a profile containing this certificate.";
+        return NO;
+    }
+    NSData *oldP12 = keychain_get(@"p12"), *oldPass = keychain_get(@"password");
+    OSStatus a = keychain_put(@"p12", p12);
+    OSStatus b = a == errSecSuccess ? keychain_put(@"password", [password dataUsingEncoding:NSUTF8StringEncoding]) : a;
+    if (a != errSecSuccess || b != errSecSuccess) {
+        keychain_forget();
+        if (oldP12 && oldPass) {
+            keychain_put(@"p12", oldP12);
+            keychain_put(@"password", oldPass);
+        }
+        if (problem) *problem = @"The device Keychain rejected the identity.";
+        return NO;
+    }
+    [NSUserDefaults.standardUserDefaults removeObjectForKey:forgottenKey];
+    sp_identity_describe();
+    return YES;
+}
+
 // The keychain's identity and anything pushed and not yet imported, gone: a line for the log, after `who`.
 static NSString *forget_identity(NSString *who) {
     OSStatus st = keychain_forget();
