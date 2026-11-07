@@ -315,7 +315,7 @@ struct SettingsView: View {
                 }
             }
         }
-        .fileImporter(isPresented: $importingIdentity, allowedContentTypes: [.data]) { result in
+        .fileImporter(isPresented: $importingIdentity, allowedContentTypes: [.item]) { result in
             switch result {
             case .failure:
                 importError = "Could not select the certificate file."
